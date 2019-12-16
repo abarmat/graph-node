@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate diesel;
 
-use crate::tokio::runtime::{Runtime, Builder};
+use crate::tokio::runtime::{Builder, Runtime};
 use graph::log;
 use graph::prelude::{Store as _, *};
 use graph_mock::MockMetricsRegistry;
