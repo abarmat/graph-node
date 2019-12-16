@@ -354,8 +354,9 @@ impl HostExports {
         task_sink: &mut impl Sink<SinkItem = Box<dyn Future<Item = (), Error = ()> + Send>>,
         link: String,
     ) -> Result<Vec<u8>, HostExportError<impl ExportError>> {
-        block_on(
-            task_sink,
+        println!("lets CAT");
+        let mut runtime = tokio01::runtime::Runtime::new().unwrap();
+        runtime.block_on(
             self.link_resolver
                 .cat(logger, &Link { link })
                 .map_err(HostExportError),
@@ -667,6 +668,10 @@ fn block_on<I: Send + 'static, ER: Send + 'static>(
     task_sink: &mut impl Sink<SinkItem = Box<dyn Future<Item = (), Error = ()> + Send>>,
     future: impl Future<Item = I, Error = ER> + Send + 'static,
 ) -> Result<I, ER> {
+    println!("block_on");
+    //let mut runtime = tokio::runtime::Builder::new().basic_scheduler().enable_all().build().unwrap();
+    futures03::executor::block_on(tokio::spawn(future.compat())).unwrap()
+    /*
     let (return_sender, return_receiver) = oneshot::channel();
     task_sink
         .send(Box::new(future.then(|res| {
@@ -675,5 +680,6 @@ fn block_on<I: Send + 'static, ER: Send + 'static>(
         .wait()
         .map_err(|_| panic!("task receiver dropped"))
         .unwrap();
-    return_receiver.wait().expect("`return_sender` dropped")
+    println!("block_on sent");
+    futures03::executor::block_on(return_receiver.compat()).expect("`return_sender` dropped")*/
 }
