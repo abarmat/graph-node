@@ -3,13 +3,13 @@
 
 use diesel::prelude::*;
 use diesel::RunQueryDsl;
-use futures::future::{self, IntoFuture};
+use futures::future::IntoFuture;
 use lazy_static::lazy_static;
 use std::fmt::Debug;
 use std::sync::Arc;
 
 use graph::components::store::ChainStore;
-use graph::prelude::serde_json;
+use graph::prelude::{serde_json, Future01CompatExt, TryFutureExt};
 use graph_store_postgres::db_schema_for_tests as db_schema;
 use graph_store_postgres::Store as DieselStore;
 
@@ -147,8 +147,8 @@ where
         Err(err) => err.into_inner(),
     };
 
-    runtime
-        .block_on(future::lazy(move || {
+    let _ = runtime
+        .block_on(async {
             // Reset state before starting
             remove_test_data();
 
@@ -156,9 +156,9 @@ where
             insert_test_data(store.clone(), chain);
 
             // Run test
-            test(store)
-        }))
-        .expect("Failed to run ChainHead test");
+            test(store).into_future().compat()
+        })
+        .unwrap_or_else(|e| panic!("Failed to run ChainHead test: {:?}", e));
 }
 
 /// Check that `attempt_chain_head_update` works as expected on the given
