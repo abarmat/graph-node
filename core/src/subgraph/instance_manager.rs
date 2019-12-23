@@ -757,10 +757,17 @@ where
                     e
                 ))
             })?;
+        section.end();
+
+        let section = ctx
+            .host_metrics
+            .stopwatch
+            .start_section("entity_cache_evict");
         cache.evict(*ENTITY_CACHE_SIZE);
+        section.end();
+
         assert!(ctx.state.entity_frecency_cache.is_empty());
         ctx.state.entity_frecency_cache = cache;
-        section.end();
 
         if !mods.is_empty() {
             info!(logger1, "Applying {} entity operation(s)", mods.len());
