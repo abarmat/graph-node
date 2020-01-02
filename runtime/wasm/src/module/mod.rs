@@ -68,6 +68,7 @@ const LOG_LOG: usize = 37;
 const BIG_INT_POW: usize = 38;
 const DATA_SOURCE_ADDRESS: usize = 39;
 const DATA_SOURCE_NETWORK: usize = 40;
+const HTTP_GET_FUNC_INDEX: usize = 41;
 
 /// Transform function index into the function name string
 fn fn_index_to_metrics_string(index: usize) -> Option<String> {
@@ -76,6 +77,7 @@ fn fn_index_to_metrics_string(index: usize) -> Option<String> {
         ETHEREUM_CALL_FUNC_INDEX => Some(String::from("ethereum_call")),
         IPFS_MAP_FUNC_INDEX => Some(String::from("ipfs_map")),
         IPFS_CAT_FUNC_INDEX => Some(String::from("ipfs_cat")),
+        HTTP_GET_FUNC_INDEX => Some(String::from("http_get")),
         _ => None,
     }
 }
@@ -578,6 +580,29 @@ where
         Ok(Some(RuntimeValue::from(self.asc_new(&result))))
     }
 
+    /// function http.get(url: String): Bytes
+    fn http_get(&mut self, url_ptr: AscPtr<AscString>) -> Result<Option<RuntimeValue>, Trap> {
+        let url = self.asc_get(url_ptr);
+        let http_res = self
+            .ctx
+            .host_exports
+            .http_get(&self.ctx.logger, &mut self.task_sink, url);
+        match http_res {
+            Ok(bytes) => {
+                let bytes_obj: AscPtr<Uint8Array> = self.asc_new(&*bytes);
+                Ok(Some(RuntimeValue::from(bytes_obj)))
+            }
+
+            // Return null in case of error.
+            Err(e) => {
+                info!(&self.ctx.logger, "Failed http.get, returning `null`";
+                                    "link" => self.asc_get::<String, _>(url_ptr),
+                                    "error" => e.to_string());
+                Ok(Some(RuntimeValue::from(0)))
+            }
+        }
+    }
+
     /// function ipfs.cat(link: String): Bytes
     fn ipfs_cat(&mut self, link_ptr: AscPtr<AscString>) -> Result<Option<RuntimeValue>, Trap> {
         let link = self.asc_get(link_ptr);
@@ -1060,6 +1085,10 @@ where
             LOG_LOG => self.log_log(args.nth_checked(0)?, args.nth_checked(1)?),
             DATA_SOURCE_ADDRESS => self.data_source_address(),
             DATA_SOURCE_NETWORK => self.data_source_network(),
+            HTTP_GET_FUNC_INDEX => {
+                let _section = stopwatch.start_section("host_export_http_get");
+                self.http_get(args.nth_checked(0)?)
+            }
             _ => panic!("Unimplemented function at {}", index),
         };
         // Record execution time
@@ -1170,6 +1199,9 @@ impl ModuleImportResolver for ModuleResolver {
 
             // ens.nameByHash
             "ens.nameByHash" => FuncInstance::alloc_host(signature, ENS_NAME_BY_HASH),
+
+            // http
+            "http.get" => FuncInstance::alloc_host(signature, HTTP_GET_FUNC_INDEX),
 
             // log.log
             "log.log" => FuncInstance::alloc_host(signature, LOG_LOG),
