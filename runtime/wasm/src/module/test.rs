@@ -4,6 +4,7 @@ use hex;
 use std::collections::HashMap;
 use std::env;
 use std::io::Cursor;
+use std::net::SocketAddr;
 use std::str::FromStr;
 use wasmi::nan_preserving_float::F64;
 
@@ -13,6 +14,8 @@ use graph::data::store::scalar;
 use graph::data::subgraph::*;
 use graph::prelude::Error;
 use graph_core;
+use hyper::{Body, Response, Server};
+use hyper::service::service_fn_ok;
 use test_store::STORE;
 use web3::types::{Address, H160};
 
@@ -295,6 +298,40 @@ fn json_conversions() {
         scalar::BigInt::from_str(number).unwrap(),
         scalar::BigInt::from_signed_bytes_le(&bytes)
     );
+}
+
+#[test]
+fn http_get() {
+    let mut module = test_module("httpGet", mock_data_source("wasm_test/http_get.wasm"));
+
+    let local_http_port: u16 = 3000;
+    let addr = SocketAddr::from(([127, 0, 0, 1], local_http_port));
+
+    let mut runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.spawn(futures::lazy(move || {
+        let make_service = || {
+            service_fn_ok(|_req| {
+                Response::new(Body::from("Hello World"))
+            })
+        };
+        Server::bind(&addr).serve(make_service)
+    }).map_err(|e| println!("listener error = {:?}", e)));
+
+    let url: String = String::from(format!("http://127.0.0.1:{}", local_http_port));
+    let converted: AscPtr<AscString> = module
+        .module
+        .clone()
+        .invoke_export(
+            "httpGetString",
+            &[RuntimeValue::from(module.asc_new(&url))],
+            &mut module,
+        )
+        .expect("call failed")
+        .expect("call returned nothing")
+        .try_into()
+        .expect("call did not return pointer");
+    let data: String = module.asc_get(converted);
+    assert_eq!(data, "Hello World");
 }
 
 #[test]

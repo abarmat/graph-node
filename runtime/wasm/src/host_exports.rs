@@ -6,6 +6,8 @@ use graph::components::store::EntityKey;
 use graph::data::store;
 use graph::prelude::serde_json;
 use graph::prelude::{slog::b, slog::record_static, *};
+use hyper::{Body, Client, Request};
+use hyper_tls::HttpsConnector;
 use semver::Version;
 use std::collections::HashMap;
 use std::fmt;
@@ -346,6 +348,38 @@ impl HostExports {
                 error = e,
             ))
         })
+    }
+
+    pub(crate) fn http_get(
+        &self,
+        logger: &Logger,
+        task_sink: &mut impl Sink<SinkItem = Box<dyn Future<Item = (), Error = ()> + Send>>,
+        link: String,
+    ) -> Result<Vec<u8>, HostExportError<impl ExportError>> {
+        let rs = record_static!(slog::Level::Info, self.data_source_name.as_str());
+        logger.log(&slog::Record::new(
+            &rs,
+            &format_args!("http_get {}", link),
+            b!("data_source" => &self.data_source_name),
+        ));
+
+        block_on(
+            task_sink,
+            future::lazy(move || {
+                let req_body = Body::empty();
+                let req = Request::get(link).body(req_body).unwrap();
+
+                // TODO: retry, timeout, file limits
+                let https = HttpsConnector::new(4).unwrap();
+                let client = Client::builder().build::<_, Body>(https);
+
+                client
+                    .request(req)
+                    .and_then(|res| res.into_body().concat2())
+                    .map(|b| b.to_vec())
+                    .map_err(move |e| HostExportError(format!("http_get: {}", e.to_string())))
+            }),
+        )
     }
 
     pub(crate) fn ipfs_cat(
